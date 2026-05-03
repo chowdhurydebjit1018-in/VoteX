@@ -1,0 +1,44 @@
+steps:
+  # Build the container image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'gcr.io/$PROJECT_ID/votex-backend', './backend']
+    id: 'build-backend'
+
+  # Push the container image to Container Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/votex-backend']
+    id: 'push-backend'
+
+  # Deploy container image to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+    - 'run'
+    - 'deploy'
+    - 'votex-backend'
+    - '--image'
+    - 'gcr.io/$PROJECT_ID/votex-backend'
+    - '--region'
+    - 'us-central1'
+    - '--allow-unauthenticated'
+    id: 'deploy-backend'
+
+  # Build Frontend
+  - name: 'node:20'
+    entrypoint: npm
+    args: ['install']
+    dir: 'frontend'
+    id: 'npm-install'
+
+  - name: 'node:20'
+    entrypoint: npm
+    args: ['run', 'build']
+    dir: 'frontend'
+    id: 'npm-build'
+
+  # Deploy Frontend and Firestore rules using npx firebase-tools
+  - name: 'node:20'
+    entrypoint: npx
+    args: ['firebase-tools', 'deploy', '--project', '$PROJECT_ID', '--token', '$_FIREBASE_TOKEN']
+    dir: '.'
+    id: 'deploy-firebase'

@@ -1,0 +1,89 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helper Functions ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isEmailVerified() {
+       return request.auth.token.email_verified == true;
+    }
+
+    // --- Entity Validations ---
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'email', 'createdAt', 'updatedAt']) 
+        && data.uid == request.auth.uid 
+        && data.email == request.auth.token.email
+        && data.uid is string && data.uid.size() <= 128
+        && data.email is string && data.email.size() <= 256
+        && data.createdAt == request.time
+        && data.updatedAt == request.time;
+    }
+
+    function isValidVotingJourney(data) {
+      return data.keys().hasAll(['userId', 'steps', 'createdAt'])
+        && data.userId == request.auth.uid
+        && data.steps is list
+        && data.createdAt == request.time;
+    }
+
+    function isValidChatMessage(data) {
+      return data.keys().hasAll(['role', 'content', 'timestamp'])
+        && data.role in ['user', 'assistant']
+        && data.content is string && data.content.size() <= 5000
+        && data.timestamp == request.time;
+    }
+
+    // --- Collection Rules ---
+
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      allow create: if isOwner(userId) && isEmailVerified() && isValidUser(incoming());
+      allow update: if isOwner(userId) && incoming().updatedAt == request.time 
+        && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'age', 'location', 'coordinates', 'registrationStatus', 'constituency', 'updatedAt']);
+      
+      match /journeys/{journeyId} {
+        allow list: if isOwner(userId);
+        allow get: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidVotingJourney(incoming());
+        allow update: if isOwner(userId) && incoming().diff(existing()).affectedKeys().hasOnly(['steps']);
+      }
+
+      match /chats/{chatId} {
+        allow list: if isOwner(userId);
+        allow get: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidChatMessage(incoming());
+      }
+    }
+
+    match /elections/{electionId} {
+      allow list: if isSignedIn();
+      allow get: if isSignedIn();
+      // Only admins should write, but for MVP let's assume read-only for users
+    }
+  }
+}

@@ -1,0 +1,1 @@
+export const API_BASE_URL = "https://votex-bj7k.onrender.com/api/v1";
